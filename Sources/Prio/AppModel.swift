@@ -1,14 +1,11 @@
 import AppKit
-import Combine
 import PrioCore
 import SwiftUI
 
-/// Bridges the engine to SwiftUI views and the status item.
 @MainActor
 final class AppModel: ObservableObject, EngineDelegate {
     let engine: Engine
     let notifications: NotificationManager
-    /// Reads the mute state of the default input (F15).
     private let isInputMuted: () -> Bool
 
     @Published private(set) var inputRows: [DeviceRow] = []
@@ -21,10 +18,9 @@ final class AppModel: ObservableObject, EngineDelegate {
     @Published private(set) var loginItemState: LoginItem.State = .unavailable
     @Published var loginItemError: String?
 
-    /// Row order frozen while the menu is open, so rows never jump under the pointer (F16).
+    /// Frozen while the menu is open so rows never jump under the pointer (F16).
     private var frozenOrder: [Direction: [String]]?
 
-    /// Called after every refresh (used by the status item icon).
     var onRefresh: (() -> Void)?
 
     init(engine: Engine, notifications: NotificationManager, isInputMuted: @escaping () -> Bool) {
@@ -43,15 +39,20 @@ final class AppModel: ObservableObject, EngineDelegate {
         notifications.post(notification)
     }
 
+    /// Publishes only values that changed, so open views re-render only when needed.
     func refresh() {
-        inputRows = engine.rows(.input)
-        outputRows = engine.rows(.output)
-        settings = engine.settings
-        lastAction = engine.lastAction
-        canUndo = engine.canUndo
-        inputMuted = isInputMuted()
-        loopActive = [.input: engine.isLoopProtectionActive(.input), .output: engine.isLoopProtectionActive(.output)]
+        assign(\.inputRows, engine.rows(.input))
+        assign(\.outputRows, engine.rows(.output))
+        assign(\.settings, engine.settings)
+        assign(\.lastAction, engine.lastAction)
+        assign(\.canUndo, engine.canUndo)
+        assign(\.inputMuted, isInputMuted())
+        assign(\.loopActive, [.input: engine.isLoopProtectionActive(.input), .output: engine.isLoopProtectionActive(.output)])
         onRefresh?()
+    }
+
+    private func assign<Value: Equatable>(_ keyPath: ReferenceWritableKeyPath<AppModel, Value>, _ value: Value) {
+        if self[keyPath: keyPath] != value { self[keyPath: keyPath] = value }
     }
 
     func refreshLoginItem() {
@@ -64,8 +65,7 @@ final class AppModel: ObservableObject, EngineDelegate {
         d == .input ? inputRows : outputRows
     }
 
-    /// Connected devices in rank order, for the menu. While the menu is open,
-    /// rows keep the order they had when it opened; newcomers go last.
+    /// Connected devices; while the menu is open newcomers go last.
     func menuRows(_ d: Direction) -> [DeviceRow] {
         let connected = rows(d).filter(\.isConnected)
         guard let order = frozenOrder?[d] else { return connected }

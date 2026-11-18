@@ -1,9 +1,10 @@
 import AppKit
 import SwiftUI
 
-/// Standard settings window with Devices and General tabs (F17, F18).
+/// Devices and General tabs (F17, F18). Created on demand, released on close.
 @MainActor
 final class SettingsWindowController: NSWindowController, NSWindowDelegate {
+    var onClose: () -> Void = {}
     private let model: AppModel
 
     init(model: AppModel) {
@@ -47,5 +48,9 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         if window?.isVisible != true { window?.center() }
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        onClose()
     }
 }

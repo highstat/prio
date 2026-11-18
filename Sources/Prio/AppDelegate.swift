@@ -15,13 +15,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var observers: [NSObjectProtocol] = []
 
     func applicationWillFinishLaunching(_ notification: Notification) {
-        // Set the notification delegate before launch finishes so an Undo tap
-        // that launched the app is delivered.
+        // Before launch finishes, so an Undo tap that launched the app is delivered.
         notifications.configure()
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.setActivationPolicy(.accessory) // menu bar only, also when run unbundled
+        NSApp.setActivationPolicy(.accessory)
         NSApp.mainMenu = makeMainMenu()
 
         engine = Engine(audio: audio, clock: clock, store: store)
@@ -49,14 +48,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        // Opening the app again (e.g. from Finder) shows Settings, since there is no Dock icon.
+        // There is no Dock icon, so opening the app again shows Settings.
         showSettings()
         return false
     }
 
     @objc func showSettings() {
         if settingsWindow == nil {
-            settingsWindow = SettingsWindowController(model: model)
+            let controller = SettingsWindowController(model: model)
+            controller.onClose = { [weak self] in self?.settingsWindow = nil }
+            settingsWindow = controller
         }
         settingsWindow?.show()
     }
