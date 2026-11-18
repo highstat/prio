@@ -13,6 +13,9 @@ BUILD_NUMBER="1"
 BUNDLE_ID="io.github.prio-app.Prio"
 MIN_MACOS="13.0"
 
+# -O and whole-module optimization are SwiftPM's release defaults; stated explicitly with dead stripping.
+BUILD_FLAGS=(-c release --product Prio -Xswiftc -O -Xswiftc -whole-module-optimization -Xlinker -dead_strip)
+
 log() { printf '==> %s\n' "$*"; }
 note() { printf 'note: %s\n' "$*"; }
 
@@ -21,14 +24,14 @@ mkdir -p "$BUILD" "$TOOLS"
 # 1. Compile ---------------------------------------------------------------
 BIN=""
 log "Building universal release binary (arm64 + x86_64)"
-if swift build -c release --product Prio --arch arm64 --arch x86_64; then
+if swift build "${BUILD_FLAGS[@]}" --arch arm64 --arch x86_64; then
     BIN="$(swift build -c release --arch arm64 --arch x86_64 --show-bin-path)/Prio"
 else
     note "universal build failed; trying one build per architecture"
     ARM_OK=0
     X86_OK=0
-    swift build -c release --product Prio --triple arm64-apple-macosx${MIN_MACOS} && ARM_OK=1 || true
-    swift build -c release --product Prio --triple x86_64-apple-macosx${MIN_MACOS} && X86_OK=1 || true
+    swift build "${BUILD_FLAGS[@]}" --triple arm64-apple-macosx${MIN_MACOS} && ARM_OK=1 || true
+    swift build "${BUILD_FLAGS[@]}" --triple x86_64-apple-macosx${MIN_MACOS} && X86_OK=1 || true
     if [ "$ARM_OK" = 1 ] && [ "$X86_OK" = 1 ]; then
         ARM_BIN="$(swift build -c release --triple arm64-apple-macosx${MIN_MACOS} --show-bin-path)/Prio"
         X86_BIN="$(swift build -c release --triple x86_64-apple-macosx${MIN_MACOS} --show-bin-path)/Prio"
@@ -36,7 +39,7 @@ else
         BIN="$BUILD/Prio-universal"
     else
         note "x86_64 is not available with this toolchain; building for $(uname -m) only"
-        swift build -c release --product Prio
+        swift build "${BUILD_FLAGS[@]}"
         BIN="$(swift build -c release --show-bin-path)/Prio"
     fi
 fi
