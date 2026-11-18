@@ -48,7 +48,7 @@ telemetry. Prio makes no network connections.
 ## Build
 
 ```sh
-git clone <repo-url>
+git clone https://github.com/highstat/prio.git
 cd prio
 make app        # → build/Prio.app (universal, ad-hoc signed)
 ```

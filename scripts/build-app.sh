@@ -10,7 +10,7 @@ APP="$BUILD/Prio.app"
 TOOLS="$BUILD/tools"
 VERSION="1.0.0"
 BUILD_NUMBER="1"
-BUNDLE_ID="io.github.prio-app.Prio"
+BUNDLE_ID="io.github.highstat.Prio"
 MIN_MACOS="13.0"
 
 # -O and whole-module optimization are SwiftPM's release defaults; stated explicitly with dead stripping.
