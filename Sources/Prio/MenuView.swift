@@ -27,7 +27,6 @@ struct MenuView: View {
         .frame(width: 300)
         .tint(.prioAccent)
         .animation(Motion.standard(reduceMotion), value: navigator.expanded)
-        .animation(Motion.standard(reduceMotion), value: model.lastAction?.id)
     }
 }
 
@@ -241,12 +240,14 @@ private struct Tag: View {
 /// Marks the manual pick with text, not color alone.
 struct PinnedBadge: View {
     var body: some View {
+        // Text stays primary: the teal accent is below 4.5:1 for small text on light backgrounds.
         Text("Pinned")
-            .font(.caption2.weight(.medium))
-            .foregroundStyle(Color.prioAccent)
+            .font(.caption.weight(.medium))
+            .foregroundStyle(.primary)
             .padding(.horizontal, 6)
             .padding(.vertical, 1)
-            .background(Capsule().fill(Color.prioAccent.opacity(0.14)))
+            .background(Capsule().fill(Color.prioAccent.opacity(0.16)))
+            .overlay(Capsule().strokeBorder(Color.prioAccent, lineWidth: 1))
             .help("You picked this device. Prio keeps it until it disconnects or a higher-ranked device connects.")
             .accessibilityLabel("Pinned")
     }
@@ -255,6 +256,7 @@ struct PinnedBadge: View {
 private struct LastActionView: View {
     @ObservedObject var model: AppModel
     @ObservedObject var navigator: MenuNavigator
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -292,6 +294,7 @@ private struct LastActionView: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 2)
+        .animation(Motion.standard(reduceMotion), value: model.lastAction?.id)
     }
 
     /// Recomputed when the popover opens; no timers while idle (R9).

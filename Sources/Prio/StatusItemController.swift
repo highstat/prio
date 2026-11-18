@@ -11,6 +11,7 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
     private var navigator: MenuNavigator?
     private var keyMonitor: Any?
     private var lastIcon: StatusIcon.Variant?
+    private var lastClosedUptime: TimeInterval = 0
     var hasOtherVisibleWindow: () -> Bool = { false }
 
     init(model: AppModel, openSettings: @escaping () -> Void) {
@@ -39,7 +40,8 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
     @objc private func togglePopover(_ sender: Any?) {
         if popover.isShown {
             popover.performClose(sender)
-        } else {
+        } else if ProcessInfo.processInfo.systemUptime - lastClosedUptime > 0.3 {
+            // The mouse-down on the icon already closed the transient popover; this mouse-up must not reopen it.
             showPopover()
         }
     }
@@ -58,7 +60,7 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         hosting.sizingOptions = .preferredContentSize
         popover.contentViewController = hosting
         popover.animates = !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-        NSApp.activate(ignoringOtherApps: true)
+        NSApp.activateIgnoringOtherApps()
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         popover.contentViewController?.view.window?.makeKey()
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
@@ -69,6 +71,10 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
             }
             return handled ? nil : event
         }
+    }
+
+    func popoverWillClose(_ notification: Notification) {
+        lastClosedUptime = ProcessInfo.processInfo.systemUptime
     }
 
     func popoverDidClose(_ notification: Notification) {

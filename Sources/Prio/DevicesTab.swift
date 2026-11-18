@@ -35,7 +35,7 @@ struct DevicesTab: View {
 
             List(selection: $selection) {
                 ForEach(rows) { row in
-                    DeviceSettingsRow(model: model, row: row)
+                    DeviceSettingsRow(engine: model.engine, row: row)
                         .tag(row.uid)
                         .contextMenu { contextMenu(for: row) }
                 }
@@ -97,8 +97,9 @@ struct DevicesTab: View {
     }
 }
 
+/// Takes the engine, not the observable model, so a publish elsewhere does not re-render every row.
 private struct DeviceSettingsRow: View {
-    @ObservedObject var model: AppModel
+    let engine: Engine
     let row: DeviceRow
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -135,14 +136,13 @@ private struct DeviceSettingsRow: View {
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(row.accessibilitySummary)
-            .accessibilityAddTraits(.isButton)
-            .accessibilityAction(named: "Move Up") { animate { model.engine.moveUp(row.uid, row.direction) } }
-            .accessibilityAction(named: "Move Down") { animate { model.engine.moveDown(row.uid, row.direction) } }
-            .accessibilityAction(named: "Move to Top") { animate { model.engine.moveToTop(row.uid, row.direction) } }
+            .accessibilityAction(named: "Move Up") { animate { engine.moveUp(row.uid, row.direction) } }
+            .accessibilityAction(named: "Move Down") { animate { engine.moveDown(row.uid, row.direction) } }
+            .accessibilityAction(named: "Move to Top") { animate { engine.moveToTop(row.uid, row.direction) } }
 
             Toggle("Use automatically", isOn: Binding(
                 get: { !row.isAvoided },
-                set: { model.engine.setAvoided(row.uid, row.direction, !$0) }
+                set: { engine.setAvoided(row.uid, row.direction, !$0) }
             ))
             .toggleStyle(.checkbox)
             .help("When off, Prio skips this device while another one is connected. It is still used as a last resort.")

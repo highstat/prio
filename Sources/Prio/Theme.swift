@@ -5,8 +5,8 @@ import SwiftUI
 /// Project-wide constants.
 enum AppInfo {
     /// The one place the source code URL is defined. Opened only on click.
-    static let sourceURL = URL(string: "https://github.com/prio-app/prio")!
-    static let sourceURLText = "github.com/prio-app/prio"
+    static let sourceURL = URL(string: "https://github.com/highstat/prio")!
+    static let sourceURLText = "github.com/highstat/prio"
 
     static var version: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.0"
@@ -39,6 +39,17 @@ extension NSColor {
 
 extension Color {
     static let prioAccent = Color(nsColor: .prioAccent)
+}
+
+extension NSApplication {
+    /// `activate(ignoringOtherApps:)` is deprecated from macOS 14.
+    func activateIgnoringOtherApps() {
+        if #available(macOS 14, *) {
+            activate()
+        } else {
+            activate(ignoringOtherApps: true)
+        }
+    }
 }
 
 /// SF Symbol for a device row ("type glyph").

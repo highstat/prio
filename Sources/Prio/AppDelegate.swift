@@ -56,7 +56,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func showSettings() {
         if settingsWindow == nil {
             let controller = SettingsWindowController(model: model)
-            controller.onClose = { [weak self] in self?.settingsWindow = nil }
+            // Released on the next turn: dropping the controller inside windowWillClose would free
+            // the window while AppKit is still closing it.
+            controller.onClose = { [weak self] in DispatchQueue.main.async { self?.settingsWindow = nil } }
             settingsWindow = controller
         }
         settingsWindow?.show()

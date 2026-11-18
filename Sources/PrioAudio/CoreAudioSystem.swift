@@ -1,5 +1,6 @@
 import CoreAudio
 import Foundation
+import os
 import PrioCore
 
 /// CoreAudio implementation of `AudioSystem`.
@@ -27,6 +28,7 @@ public final class CoreAudioSystem: AudioSystem {
     private var deviceRegistrations: [AudioObjectID: [Registration]] = [:]
     private var muteRegistrations: [Registration] = []
     private var listening = false
+    private static let log = Logger(subsystem: "io.github.highstat.Prio", category: "audio")
 
     public init() {}
 
@@ -44,6 +46,7 @@ public final class CoreAudioSystem: AudioSystem {
     @discardableResult
     public func setDefaultDevice(_ direction: Direction, uid: String) -> Bool {
         guard let id = deviceIDs().first(where: { Self.string($0, kAudioDevicePropertyDeviceUID) == uid }) else {
+            Self.log.error("Cannot set default \(direction.rawValue, privacy: .public): device is gone")
             return false
         }
         var address = Self.address(direction == .input
@@ -54,6 +57,9 @@ public final class CoreAudioSystem: AudioSystem {
             AudioObjectID(kAudioObjectSystemObject), &address, 0, nil,
             UInt32(MemoryLayout<AudioDeviceID>.size), &value
         )
+        if status != noErr {
+            Self.log.error("Setting default \(direction.rawValue, privacy: .public) failed: OSStatus \(status, privacy: .public)")
+        }
         return status == noErr
     }
 
@@ -153,13 +159,25 @@ public final class CoreAudioSystem: AudioSystem {
             MainActor.assumeIsolated { handler() }
         }
         let status = AudioObjectAddPropertyListenerBlock(object, &address, DispatchQueue.main, block)
-        guard status == noErr else { return nil }
+        guard status == noErr else {
+            Self.log.error("Listener for '\(Self.fourCC(address.mSelector), privacy: .public)' not added: OSStatus \(status, privacy: .public)")
+            return nil
+        }
         return Registration(object: object, address: address, block: block)
     }
 
+    /// Removing a listener from a device that already disappeared fails harmlessly; the HAL dropped it with the device.
     private func unregister(_ r: Registration) {
         var address = r.address
-        AudioObjectRemovePropertyListenerBlock(r.object, &address, DispatchQueue.main, r.block)
+        let status = AudioObjectRemovePropertyListenerBlock(r.object, &address, DispatchQueue.main, r.block)
+        if status != noErr && status != kAudioHardwareBadObjectError {
+            Self.log.debug("Listener removal returned OSStatus \(status, privacy: .public)")
+        }
+    }
+
+    private static func fourCC(_ code: UInt32) -> String {
+        let bytes = [24, 16, 8, 0].map { UInt8((code >> UInt32($0)) & 0xFF) }
+        return String(decoding: bytes, as: UTF8.self)
     }
 
     // MARK: - Device inspection
@@ -171,7 +189,8 @@ public final class CoreAudioSystem: AudioSystem {
         guard AudioObjectGetPropertyDataSize(system, &address, 0, nil, &size) == noErr, size > 0 else { return [] }
         var ids = [AudioDeviceID](repeating: 0, count: Int(size) / MemoryLayout<AudioDeviceID>.size)
         guard AudioObjectGetPropertyData(system, &address, 0, nil, &size, &ids) == noErr else { return [] }
-        return ids
+        // A device can disappear between the two calls; `size` then reports fewer valid entries.
+        return Array(ids.prefix(Int(size) / MemoryLayout<AudioDeviceID>.size))
     }
 
     private func defaultDeviceID(_ direction: Direction) -> AudioDeviceID? {

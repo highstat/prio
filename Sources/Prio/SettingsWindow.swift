@@ -34,10 +34,13 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         window.styleMask = [.titled, .closable, .miniaturizable]
         window.toolbarStyle = .preference
         window.isReleasedWhenClosed = false
-        window.setFrameAutosaveName("PrioSettings")
+        if !window.setFrameUsingName(Self.frameName) { window.center() }
+        window.setFrameAutosaveName(Self.frameName)
         super.init(window: window)
         window.delegate = self
     }
+
+    private static let frameName = "PrioSettings"
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("not used") }
@@ -45,8 +48,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     func show() {
         model.refresh()
         model.refreshLoginItem()
-        if window?.isVisible != true { window?.center() }
-        NSApp.activate(ignoringOtherApps: true)
+        NSApp.activateIgnoringOtherApps()
         window?.makeKeyAndOrderFront(nil)
     }
 
