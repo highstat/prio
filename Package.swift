@@ -14,14 +14,14 @@ let package = Package(
         .target(
             name: "PrioAudio",
             dependencies: ["PrioCore"],
-            swiftSettings: [.swiftLanguageMode(.v5)],
+            swiftSettings: [.swiftLanguageMode(.v6)],
             linkerSettings: [.linkedFramework("CoreAudio")]
         ),
         // The menu bar app.
         .executableTarget(
             name: "Prio",
             dependencies: ["PrioCore", "PrioAudio"],
-            swiftSettings: [.swiftLanguageMode(.v5)],
+            swiftSettings: [.swiftLanguageMode(.v6)],
             linkerSettings: [
                 .linkedFramework("AppKit"),
                 .linkedFramework("SwiftUI"),
