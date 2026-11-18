@@ -24,7 +24,7 @@ telemetry. Prio makes no network connections.
 - **Use only as a last resort.** Untick a device, such as display speakers,
   a webcam mic or a headset's mic, and it is skipped while anything else is
   connected. If it is the only device left, Prio uses it and tells you once.
-- **Your pick wins.** Picking a device in Prio's menu keeps it until it
+- **Manual picks stick.** Picking a device in Prio's menu keeps it until it
   disconnects or a higher-ranked device connects. By default, an output you
   pick in Control Center or System Settings is respected too.
 - **Bluetooth settling.** Prio waits for reconnecting devices to settle, so
@@ -48,7 +48,7 @@ telemetry. Prio makes no network connections.
 ## Build
 
 ```sh
-git clone https://github.com/prio-app/prio.git
+git clone <repo-url>
 cd prio
 make app        # → build/Prio.app (universal, ad-hoc signed)
 ```
