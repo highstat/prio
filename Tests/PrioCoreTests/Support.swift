@@ -70,6 +70,9 @@ final class FakeAudioSystem: AudioSystem {
     /// UIDs the OS refuses to make default (F10).
     var refuse: Set<String> = []
     var echoMode: EchoMode = .async
+    /// Accept a new default but apply it only at the next `flush()`, like an asynchronous HAL.
+    var delayedApply = false
+    private var pendingApply: [Direction: String] = [:]
     /// When the default device disconnects, act like macOS and pick another.
     var macOSFallbackOnDisconnect = true
     /// Deliver default-changed before devices-changed on disconnect.
@@ -87,6 +90,10 @@ final class FakeAudioSystem: AudioSystem {
             return false
         }
         guard defaults[direction] != uid else { return true }
+        if delayedApply {
+            pendingApply[direction] = uid
+            return true
+        }
         defaults[direction] = uid
         switch echoMode {
         case .async: queued.append(.defaultChanged(direction))
@@ -102,6 +109,11 @@ final class FakeAudioSystem: AudioSystem {
 
     /// Deliver queued listener callbacks.
     func flush() {
+        for (d, uid) in pendingApply {
+            defaults[d] = uid
+            queued.append(.defaultChanged(d))
+        }
+        pendingApply = [:]
         while !queued.isEmpty {
             let e = queued.removeFirst()
             switch e {

@@ -12,6 +12,8 @@ public final class Engine {
     }
 
     public static let historyLimit = 20
+    /// F10: how long an accepted write may take to show up before it counts as failed.
+    public static let verifyGrace: TimeInterval = 0.5
 
     private let audio: AudioSystem
     private let clock: EngineClock
@@ -35,6 +37,7 @@ public final class Engine {
     private var lastResortEpisode: Set<Direction> = []
     private var loop: [Direction: LoopProtection] = [:]
     private var settleTask: Cancellable?
+    private var pendingVerification: [Direction: Cancellable] = [:]
     private var settleDeadline: Date?
     private var nextActionID = 1
 
@@ -312,7 +315,14 @@ public final class Engine {
     }
 
     private func perform(_ kind: ActionRecord.Kind, _ d: Direction, to uid: String, from: String?) {
-        guard write(d, uid) else { return fail(d, uid, from: from) }
+        write(d, uid) { [weak self] applied in
+            guard let self else { return }
+            guard applied else { return self.fail(d, uid, from: from) }
+            self.succeed(kind, d, to: uid, from: from)
+        }
+    }
+
+    private func succeed(_ kind: ActionRecord.Kind, _ d: Direction, to uid: String, from: String?) {
         let a = record(kind, d, from: from, to: uid, undo: from)
         switch kind {
         case .corrected:
@@ -329,13 +339,25 @@ public final class Engine {
         changed()
     }
 
-    /// F10: verified by reading the default back. Tracked first because the echo may arrive re-entrantly.
-    private func write(_ d: Direction, _ uid: String) -> Bool {
+    /// F10: verified by reading the default back. The write is tracked first because its echo
+    /// may arrive re-entrantly, and an accepted write gets `verifyGrace` to show up.
+    private func write(_ d: Direction, _ uid: String, then finish: @escaping (Bool) -> Void) {
+        pendingVerification[d]?.cancel()
+        pendingVerification[d] = nil
         lastKnownDefault[d] = uid
-        audio.setDefaultDevice(d, uid: uid)
-        let actual = audio.defaultDevice(d)
-        lastKnownDefault[d] = actual
-        return actual == uid
+        let accepted = audio.setDefaultDevice(d, uid: uid)
+        if audio.defaultDevice(d) == uid { return finish(true) }
+        guard accepted else {
+            lastKnownDefault[d] = audio.defaultDevice(d)
+            return finish(false)
+        }
+        pendingVerification[d] = clock.schedule(after: Self.verifyGrace) { [weak self] in
+            guard let self else { return }
+            self.pendingVerification[d] = nil
+            let actual = self.audio.defaultDevice(d)
+            if actual != uid { self.lastKnownDefault[d] = actual }
+            finish(actual == uid)
+        }
     }
 
     private func fail(_ d: Direction, _ uid: String, from: String?) {
@@ -359,13 +381,16 @@ public final class Engine {
         guard isStarted, devices.usable(d).contains(uid) else { return }
         pendingCorrection.remove(d)
         let before = audio.defaultDevice(d)
-        if before != uid {
-            guard write(d, uid) else {
-                manualPicks[d] = nil
-                return fail(d, uid, from: before)
-            }
-            record(.picked, d, from: before, to: uid, undo: nil)
+        guard before != uid else { return pin(uid, d) }
+        write(d, uid) { [weak self] applied in
+            guard let self else { return }
+            guard applied else { return self.fail(d, uid, from: before) }
+            self.record(.picked, d, from: before, to: uid, undo: nil)
+            self.pin(uid, d)
         }
+    }
+
+    private func pin(_ uid: String, _ d: Direction) {
         if settings.automaticSwitching { manualPicks[d] = uid }
         save()
         changed()
@@ -377,11 +402,12 @@ public final class Engine {
         let d = a.direction
         pendingCorrection.remove(d)
         let before = audio.defaultDevice(d)
-        guard write(d, uid) else { return fail(d, uid, from: before) }
-        if settings.automaticSwitching { manualPicks[d] = uid }
-        record(.undone, d, from: before, to: uid, undo: nil)
-        save()
-        changed()
+        write(d, uid) { [weak self] applied in
+            guard let self else { return }
+            guard applied else { return self.fail(d, uid, from: before) }
+            self.record(.undone, d, from: before, to: uid, undo: nil)
+            self.pin(uid, d)
+        }
     }
 
     // MARK: - Ranking edits (F17), each re-evaluates (F4)
@@ -517,7 +543,7 @@ public struct DeviceRow: Identifiable, Equatable, Sendable {
     public var isManualPick: Bool
     public var isHeadphoneLike: Bool
 
-    public var id: String { uid }
+    public var id: String { "\(direction.rawValue):\(uid)" }
 
     public enum Status: String, Sendable {
         case inUse = "In use"

@@ -240,7 +240,25 @@ struct FailureTests {
         let e = Engine(audio: LyingAudio(), clock: clock, store: MemoryStore(s.encoded()))
         e.start()
         clock.advance(by: 1)
+        #expect(e.lastAction == nil) // still within the verification grace period
+        clock.advance(by: Engine.verifyGrace)
         #expect(e.lastAction?.kind == .failed)
+    }
+
+    @Test("F10/F7: a default the OS applies asynchronously is a success, and its echo is not an external change")
+    func asynchronousApply() {
+        var s = PrioSettings()
+        s.respectInputChanges = true
+        let h = Harness(inputList: [entry("a"), entry("b")], connected: [Dev.mic("a"), Dev.mic("b")], input: "b", settings: s)
+        h.audio.delayedApply = true
+        h.launch()
+        h.advance(1)
+        #expect(h.def(.input) == "a")
+        #expect(h.actions(.failed).isEmpty)
+        #expect(h.actions(.switched).count == 1)
+        #expect(h.actions(.corrected).isEmpty)
+        #expect(h.engine.manualPick(.input) == nil)
+        #expect(h.delegate.notifications.isEmpty)
     }
 
     @Test("F10: failed attempts count toward loop protection")
@@ -265,5 +283,17 @@ struct FailureTests {
         h.engine.pick("b", .output)
         #expect(h.engine.lastAction?.kind == .failed)
         #expect(h.engine.manualPick(.output) == nil)
+    }
+
+    @Test("F10/F6: a failed menu pick leaves an existing pin in place")
+    func failedPickKeepsPin() {
+        let h = Harness(outputList: [entry("a"), entry("b"), entry("c")], connected: [Dev.speaker("a"), Dev.speaker("b"), Dev.speaker("c")], output: "a")
+        h.launch()
+        h.engine.pick("b", .output)
+        h.audio.refuse = ["c"]
+        h.engine.pick("c", .output)
+        #expect(h.engine.lastAction?.kind == .failed)
+        #expect(h.def(.output) == "b")
+        #expect(h.engine.manualPick(.output) == "b")
     }
 }

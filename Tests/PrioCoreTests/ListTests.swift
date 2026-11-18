@@ -200,6 +200,16 @@ struct ListTests {
         #expect(Transport.hdmiDisplayPort.label == "HDMI/DisplayPort")
     }
 
+    @Test("F17: row identity includes the direction, so a headset's input and output rows never share an id")
+    func rowIdentity() {
+        let h = Harness(devices: [Dev.headset("hs", "Headset", transport: .usb)], input: "hs", output: "hs")
+        h.launch()
+        let input = h.engine.rows(.input).first { $0.uid == "hs" }
+        let output = h.engine.rows(.output).first { $0.uid == "hs" }
+        #expect(input != nil && output != nil)
+        #expect(input?.id != output?.id)
+    }
+
     @Test("F2: device names are refreshed when a device reports a new name")
     func nameRefresh() {
         let h = Harness(outputList: [RankedEntry(uid: "s", name: "Old", transport: .usb)], connected: [Dev.speaker("s", "New Name")], output: "s")
