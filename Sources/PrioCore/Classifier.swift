@@ -1,7 +1,6 @@
 import Foundation
 
-/// F2a: decides whether a newly seen output device is "headphone-like", which
-/// only controls where it is inserted in the output list.
+/// F2a: only decides where a new output device is inserted.
 public enum HeadphoneClassifier {
     public static let speakerKeywords: [String] = [
         "speaker", "soundbar", "sound bar", "stanmore", "sync", "boom", "flip",
@@ -13,10 +12,7 @@ public enum HeadphoneClassifier {
         "wh-", "wf-", "qc", "quietcomfort", "elite", "evolve",
     ]
 
-    /// Pure classification.
-    /// - Rule 2 (headphone keyword, any transport) wins over everything.
-    /// - Rule 1: Bluetooth and no speaker keyword.
-    /// - Rule 3: built-in output whose data source is the headphone jack.
+    /// Headphone keywords beat speaker keywords, which beat the Bluetooth rule.
     public static func isHeadphoneLike(
         name: String,
         transport: Transport,
@@ -54,7 +50,6 @@ public enum HeadphoneClassifier {
     }
 }
 
-/// The result of target selection for one direction (F3).
 public struct Target: Equatable, Sendable {
     public enum Reason: Equatable, Sendable {
         case manualPick
@@ -73,12 +68,7 @@ public struct Target: Equatable, Sendable {
     public var isLastResort: Bool { reason == .lastResort }
 }
 
-/// F3: pure, deterministic target selection.
 public enum TargetSelector {
-    /// - Parameters:
-    ///   - list: the direction's ranked list (avoided flags live on the entries).
-    ///   - connected: UIDs of devices that are connected and usable.
-    ///   - manualPick: the current manual pick, if any. It is valid while connected.
     public static func select(list: RankedList, connected: Set<String>, manualPick: String?) -> Target? {
         if let pick = manualPick, connected.contains(pick) {
             return Target(uid: pick, reason: .manualPick)

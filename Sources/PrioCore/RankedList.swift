@@ -1,6 +1,6 @@
 import Foundation
 
-/// An ordered list of known devices for one direction. Index 0 is rank 1 (F1).
+/// Index 0 is rank 1.
 public struct RankedList: Codable, Equatable, Sendable {
     public var entries: [RankedEntry]
 
@@ -16,7 +16,6 @@ public struct RankedList: Codable, Equatable, Sendable {
 
     public func entry(_ uid: String) -> RankedEntry? { entries.first { $0.uid == uid } }
 
-    /// 1-based rank, or nil if unknown.
     public func rank(of uid: String) -> Int? { index(of: uid).map { $0 + 1 } }
 
     public mutating func append(_ entry: RankedEntry) {
@@ -29,7 +28,7 @@ public struct RankedList: Codable, Equatable, Sendable {
         entries.insert(entry, at: 0)
     }
 
-    /// SwiftUI-style move (`onMove`). Returns true if the order changed.
+    /// Same semantics as SwiftUI `onMove`.
     @discardableResult
     public mutating func move(fromOffsets source: IndexSet, toOffset destination: Int) -> Bool {
         let before = uids
@@ -46,7 +45,6 @@ public struct RankedList: Codable, Equatable, Sendable {
         return uids != before
     }
 
-    /// Move a device to a new 0-based index. Returns true if the order changed.
     @discardableResult
     public mutating func move(_ uid: String, to newIndex: Int) -> Bool {
         guard let from = index(of: uid) else { return false }
@@ -86,15 +84,33 @@ public struct RankedList: Codable, Equatable, Sendable {
         return true
     }
 
-    /// Refresh stored name/transport from a live device (names can change).
+    /// F2: new headphone-like outputs go to the top, everything else to the bottom.
+    public mutating func learn(_ device: AudioDevice, direction: Direction) {
+        let entry = RankedEntry(uid: device.uid, name: device.name, transport: device.transport)
+        if direction == .output && HeadphoneClassifier.isHeadphoneLike(device) {
+            insertAtTop(entry)
+        } else {
+            append(entry)
+        }
+    }
+
+    /// F2 first launch: the current default first, then the OS order.
+    public static func seeded(from eligible: [AudioDevice], defaultUID: String?) -> RankedList {
+        let first = eligible.filter { $0.uid == defaultUID }
+        var list = RankedList()
+        for device in first + eligible {
+            list.append(RankedEntry(uid: device.uid, name: device.name, transport: device.transport))
+        }
+        return list
+    }
+
     public mutating func refresh(from device: AudioDevice) {
         guard let i = index(of: device.uid) else { return }
         entries[i].name = device.name
         entries[i].transport = device.transport
     }
 
-    /// Display names with duplicates disambiguated by rank order: the first
-    /// keeps its name, later ones get " (2)", " (3)" … (F17).
+    /// F17: later duplicates by rank get " (2)", " (3)"…
     public func displayNames() -> [String: String] {
         var seen: [String: Int] = [:]
         var result: [String: String] = [:]

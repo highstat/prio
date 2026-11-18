@@ -127,7 +127,6 @@ final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
     func post(_ n: PrioNotification) {
         guard let center else { return }
         let content = UNMutableNotificationContent()
-        content.title = n.title
         content.body = n.body
         if let id = n.undoActionID {
             content.categoryIdentifier = Self.correctionCategory

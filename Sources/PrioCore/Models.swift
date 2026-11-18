@@ -1,6 +1,5 @@
 import Foundation
 
-/// Input (microphones) or output (speakers, headphones).
 public enum Direction: String, Codable, CaseIterable, Sendable, Hashable {
     case input
     case output
@@ -9,8 +8,6 @@ public enum Direction: String, Codable, CaseIterable, Sendable, Hashable {
     public var lowercaseLabel: String { rawValue }
 }
 
-/// How a device is attached. Maps the many CoreAudio transport types onto the
-/// labels Prio shows (F17).
 public enum Transport: String, Codable, CaseIterable, Sendable, Hashable {
     case builtIn
     case usb
@@ -37,15 +34,13 @@ public enum Transport: String, Codable, CaseIterable, Sendable, Hashable {
     }
 
     public init(from decoder: Decoder) throws {
-        // Unknown values from a newer version decode as `.other` instead of failing.
+        // Values from a newer version must not wipe the stored lists.
         let raw = try decoder.singleValueContainer().decode(String.self)
         self = Transport(rawValue: raw) ?? .other
     }
 }
 
-/// A snapshot of one device as the OS reports it right now.
 public struct AudioDevice: Equatable, Sendable, Hashable {
-    /// Stable, persistent unique identifier (CoreAudio device UID).
     public var uid: String
     public var name: String
     public var transport: Transport
@@ -54,8 +49,7 @@ public struct AudioDevice: Equatable, Sendable, Hashable {
     public var canBeDefaultInput: Bool
     public var canBeDefaultOutput: Bool
     public var isHidden: Bool
-    /// False while a device is present but not ready to carry audio
-    /// (e.g. a Bluetooth headset still negotiating). Prio never switches to it.
+    /// False while present but not ready (e.g. a Bluetooth headset still negotiating).
     public var isAlive: Bool
     /// Built-in output only: the active data source is the headphone jack.
     public var dataSourceIsHeadphones: Bool
@@ -84,7 +78,6 @@ public struct AudioDevice: Equatable, Sendable, Hashable {
         self.dataSourceIsHeadphones = dataSourceIsHeadphones
     }
 
-    /// Whether the device belongs in the ranked list for `direction` (F2).
     public func isEligible(for direction: Direction) -> Bool {
         if isHidden { return false }
         switch direction {
@@ -93,13 +86,11 @@ public struct AudioDevice: Equatable, Sendable, Hashable {
         }
     }
 
-    /// Eligible and ready to be selected (F8: not-yet-usable devices are skipped).
     public func isUsable(for direction: Direction) -> Bool {
         isEligible(for: direction) && isAlive
     }
 }
 
-/// One row of a ranked list, persisted.
 public struct RankedEntry: Codable, Equatable, Sendable, Hashable, Identifiable {
     public var uid: String
     public var name: String
@@ -126,7 +117,6 @@ public struct RankedEntry: Codable, Equatable, Sendable, Hashable, Identifiable 
     }
 }
 
-/// User-facing settings (F11, F14, F7, F18).
 public struct PrioSettings: Codable, Equatable, Sendable {
     public var automaticSwitching: Bool = true
     public var notificationsEnabled: Bool = true

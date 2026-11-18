@@ -1,6 +1,5 @@
 import Foundation
 
-/// Facts about the running app/OS, supplied by the app target.
 public struct DiagnosticsEnvironment: Sendable {
     public var appVersion: String
     public var osVersion: String
@@ -13,9 +12,7 @@ public struct DiagnosticsEnvironment: Sendable {
     }
 }
 
-/// F19: plain-text diagnostics report. Device names are replaced with
-/// "Input 1", "Output 3"… unless `includeNames` is true. Device UIDs are never
-/// included (they can contain hardware addresses or product names).
+/// F19. Device UIDs are never included: they can contain hardware addresses or product names.
 public enum Diagnostics {
     @MainActor
     public static func report(engine: Engine, environment env: DiagnosticsEnvironment, includeNames: Bool) -> String {
@@ -55,7 +52,7 @@ public enum Diagnostics {
             let target = engine.target(d)
             out.append("  Target: \(target.map { "\(label($0.uid, nil)) (\(reason($0.reason)))" } ?? "none")")
             let loop = engine.loopInfo(d)
-            out.append("  Loop protection: \(loop.stopped ? "active" : "off") (\(loop.recentAttempts) recent attempts)")
+            out.append("  Loop protection: \(loop.isActive ? "active" : "off") (\(loop.recentAttempts) recent attempts)")
         }
 
         out.append("")
