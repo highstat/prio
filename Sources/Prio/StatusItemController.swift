@@ -1,33 +1,24 @@
 import AppKit
 import SwiftUI
 
-/// Owns the menu bar item and its popover (F15, F16).
+/// Owns the menu bar item; the popover content is built on open and released on close (F15, F16).
 @MainActor
 final class StatusItemController: NSObject, NSPopoverDelegate {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private let popover = NSPopover()
     private let model: AppModel
+    private let openSettings: () -> Void
+    private var navigator: MenuNavigator?
+    private var keyMonitor: Any?
     private var lastIcon: StatusIcon.Variant?
-    /// True while another Prio window (Settings) is open.
     var hasOtherVisibleWindow: () -> Bool = { false }
 
     init(model: AppModel, openSettings: @escaping () -> Void) {
         self.model = model
+        self.openSettings = openSettings
         super.init()
-        let hosting = NSHostingController(rootView: MenuView(
-            model: model,
-            openSettings: { [weak self] in
-                self?.popover.performClose(nil)
-                openSettings()
-            },
-            quit: { NSApp.terminate(nil) }
-        ))
-        hosting.sizingOptions = .preferredContentSize
-        popover.contentViewController = hosting
         popover.behavior = .transient
-        popover.animates = !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         popover.delegate = self
-
         if let button = statusItem.button {
             button.target = self
             button.action = #selector(togglePopover(_:))
@@ -37,25 +28,12 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
     }
 
     func updateIcon() {
-        let variant: StatusIcon.Variant
-        if !model.settings.automaticSwitching {
-            variant = .paused
-        } else if model.inputMuted {
-            variant = .muted
-        } else {
-            variant = .normal
-        }
+        let variant: StatusIcon.Variant = !model.settings.automaticSwitching ? .paused : (model.inputMuted ? .muted : .normal)
         guard variant != lastIcon, let button = statusItem.button else { return }
         lastIcon = variant
         button.image = StatusIcon.image(variant)
-        let description: String
-        switch variant {
-        case .normal: description = "Prio"
-        case .muted: description = "Prio, input muted"
-        case .paused: description = "Prio, automatic switching paused"
-        }
-        button.setAccessibilityLabel(description)
-        button.toolTip = description
+        button.setAccessibilityLabel(variant.accessibilityLabel)
+        button.toolTip = variant.accessibilityLabel
     }
 
     @objc private func togglePopover(_ sender: Any?) {
@@ -66,30 +44,84 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         }
     }
 
-    func showPopover() {
+    private func showPopover() {
         guard let button = statusItem.button else { return }
         model.menuWillOpen()
+        let navigator = MenuNavigator(model: model)
+        navigator.openSettings = { [weak self] in
+            self?.popover.performClose(nil)
+            self?.openSettings()
+        }
+        navigator.quit = { NSApp.terminate(nil) }
+        self.navigator = navigator
+        let hosting = NSHostingController(rootView: MenuView(model: model, navigator: navigator))
+        hosting.sizingOptions = .preferredContentSize
+        popover.contentViewController = hosting
         popover.animates = !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         NSApp.activate(ignoringOtherApps: true)
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         popover.contentViewController?.view.window?.makeKey()
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            let keyCode = event.keyCode, flags = event.modifierFlags, characters = event.charactersIgnoringModifiers
+            let windowNumber = event.windowNumber
+            let handled = MainActor.assumeIsolated {
+                self?.handleKey(keyCode: keyCode, flags: flags, characters: characters, windowNumber: windowNumber) ?? false
+            }
+            return handled ? nil : event
+        }
     }
 
     func popoverDidClose(_ notification: Notification) {
+        if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
+        keyMonitor = nil
+        popover.contentViewController = nil
+        navigator = nil
         model.menuDidClose()
-        // Give keyboard focus back to the previous app, like a menu would.
-        if !hasOtherVisibleWindow() {
-            NSApp.deactivate()
+        // Give keyboard focus back to the previous app, as a menu would.
+        if !hasOtherVisibleWindow() { NSApp.deactivate() }
+    }
+
+    private enum Key: UInt16 {
+        case tab = 48, space = 49, returnKey = 36, enter = 76
+        case left = 123, right = 124, down = 125, up = 126
+    }
+
+    private func handleKey(keyCode: UInt16, flags rawFlags: NSEvent.ModifierFlags, characters: String?, windowNumber: Int) -> Bool {
+        guard let navigator, windowNumber == popover.contentViewController?.view.window?.windowNumber else { return false }
+        let flags = rawFlags.intersection(.deviceIndependentFlagsMask)
+        if flags.contains(.command) {
+            switch characters {
+            case ",": navigator.activate(.settings)
+            case "q": navigator.activate(.quit)
+            default: return false
+            }
+            return true
         }
+        guard let key = Key(rawValue: keyCode) else { return false }
+        switch key {
+        case .down: navigator.move(1)
+        case .up: navigator.move(-1)
+        case .tab: navigator.move(flags.contains(.shift) ? -1 : 1)
+        case .returnKey, .enter, .space: navigator.activate()
+        case .right: navigator.expandHighlighted(true)
+        case .left: navigator.expandHighlighted(false)
+        }
+        return true
     }
 }
 
 /// Monochrome template glyph: three bars of decreasing length, a ranked list.
 enum StatusIcon {
     enum Variant: Equatable {
-        case normal
-        case muted
-        case paused
+        case normal, muted, paused
+
+        var accessibilityLabel: String {
+            switch self {
+            case .normal: return "Prio"
+            case .muted: return "Prio, input muted"
+            case .paused: return "Prio, automatic switching paused"
+            }
+        }
     }
 
     static func image(_ variant: Variant) -> NSImage {

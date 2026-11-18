@@ -63,7 +63,10 @@ enum DebugSnapshots {
         let dir = URL(fileURLWithPath: outputFolder, isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         for (suffix, name) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
-            render(MenuView(model: model, initiallyExpanded: .output, openSettings: {}, quit: {}), name, dir.appendingPathComponent("menu-\(suffix).png"))
+            let navigator = MenuNavigator(model: model)
+            navigator.expanded = .output
+            navigator.highlighted = .device(.output, "dell")
+            render(MenuView(model: model, navigator: navigator), name, dir.appendingPathComponent("menu-\(suffix).png"))
             render(DevicesTab(model: model, direction: .input), name, dir.appendingPathComponent("devices-\(suffix).png"))
             render(GeneralTab(model: model), name, dir.appendingPathComponent("general-\(suffix).png"))
         }

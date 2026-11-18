@@ -4,137 +4,175 @@ import SwiftUI
 /// Contents of the menu bar popover (F16).
 struct MenuView: View {
     @ObservedObject var model: AppModel
-    var openSettings: () -> Void
-    var quit: () -> Void
-
-    @ViewState private var expanded: Direction?
+    @ObservedObject var navigator: MenuNavigator
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    init(model: AppModel, initiallyExpanded: Direction? = nil, openSettings: @escaping () -> Void, quit: @escaping () -> Void) {
-        self.model = model
-        self.openSettings = openSettings
-        self.quit = quit
-        _expanded = ViewState(initialValue: initiallyExpanded)
-    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            autoToggle
-            separator
-            DeviceSection(model: model, direction: .input, expanded: $expanded, toggle: toggle)
-            DeviceSection(model: model, direction: .output, expanded: $expanded, toggle: toggle)
-            separator
-            LastActionView(model: model)
-            separator
-            MenuCommand(title: "Settings…", shortcut: "⌘,", action: openSettings)
-                .keyboardShortcut(",", modifiers: .command)
-            MenuCommand(title: "Quit Prio", shortcut: "⌘Q", action: quit)
-                .keyboardShortcut("q", modifiers: .command)
+            AutomaticSwitchingRow(model: model, navigator: navigator)
+            MenuDivider()
+            DeviceSection(model: model, navigator: navigator, direction: .input)
+            DeviceSection(model: model, navigator: navigator, direction: .output)
+            MenuDivider()
+            LastActionView(model: model, navigator: navigator)
+            MenuDivider()
+            MenuRow(navigator: navigator, item: .settings, label: "Settings…") { _ in
+                CommandLabel(title: "Settings…", shortcut: "⌘,")
+            }
+            MenuRow(navigator: navigator, item: .quit, label: "Quit Prio") { _ in
+                CommandLabel(title: "Quit Prio", shortcut: "⌘Q")
+            }
         }
         .padding(.vertical, 6)
         .frame(width: 300)
         .tint(.prioAccent)
-    }
-
-    private func toggle(_ d: Direction) {
-        let change = { expanded = expanded == d ? nil : d }
-        if reduceMotion {
-            change()
-        } else {
-            withAnimation(.easeInOut(duration: 0.15), change)
-        }
-    }
-
-    private var autoToggle: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Toggle(isOn: model.binding(\.automaticSwitching)) {
-                Text("Automatic switching")
-                    .font(.body.weight(.medium))
-            }
-            .toggleStyle(.switch)
-            .controlSize(.small)
-            if !model.settings.automaticSwitching {
-                Text("Paused. macOS picks devices on its own.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 6)
-    }
-
-    private var separator: some View {
-        Divider().padding(.vertical, 4).padding(.horizontal, 10)
+        .animation(Motion.standard(reduceMotion), value: navigator.expanded)
+        .animation(Motion.standard(reduceMotion), value: model.lastAction?.id)
     }
 }
 
-/// Input or output: the current device, expandable into the ranked list.
+enum Motion {
+    /// Short ease-out used for every transition; none with Reduce Motion.
+    static func standard(_ reduceMotion: Bool) -> Animation? {
+        reduceMotion ? nil : .easeOut(duration: 0.2)
+    }
+
+    static func hover(_ reduceMotion: Bool) -> Animation? {
+        reduceMotion ? nil : .easeOut(duration: 0.12)
+    }
+}
+
+private struct MenuDivider: View {
+    var body: some View {
+        Divider().padding(.vertical, 5).padding(.horizontal, 14)
+    }
+}
+
+/// A full-width row whose highlight follows both the pointer and the keyboard.
+private struct MenuRow<Content: View>: View {
+    @ObservedObject var navigator: MenuNavigator
+    let item: MenuItemID
+    var enabled = true
+    let label: String
+    @ViewBuilder let content: (_ highlighted: Bool) -> Content
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    private var highlighted: Bool { enabled && navigator.highlighted == item }
+
+    var body: some View {
+        Button { navigator.activate(item) } label: {
+            content(highlighted)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+                .background(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(Color.primary.opacity(highlighted ? (contrast == .increased ? 0.18 : 0.08) : 0))
+                )
+                .animation(Motion.hover(reduceMotion), value: highlighted)
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
+        .padding(.horizontal, 6)
+        .onHover { inside in
+            if inside && enabled {
+                navigator.highlighted = item
+            } else if navigator.highlighted == item {
+                navigator.highlighted = nil
+            }
+        }
+        .accessibilityLabel(label)
+    }
+}
+
+private struct AutomaticSwitchingRow: View {
+    @ObservedObject var model: AppModel
+    @ObservedObject var navigator: MenuNavigator
+
+    var body: some View {
+        let on = model.settings.automaticSwitching
+        MenuRow(navigator: navigator, item: .automaticSwitching, label: "Automatic switching") { _ in
+            HStack {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Automatic switching")
+                    if !on {
+                        Text("Paused")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Spacer()
+                Toggle("", isOn: model.binding(\.automaticSwitching))
+                    .toggleStyle(.switch)
+                    .controlSize(.mini)
+                    .labelsHidden()
+                    .accessibilityHidden(true)
+            }
+        }
+        .accessibilityValue(on ? "on" : "off")
+    }
+}
+
 private struct DeviceSection: View {
     @ObservedObject var model: AppModel
+    @ObservedObject var navigator: MenuNavigator
     let direction: Direction
-    @Binding var expanded: Direction?
-    let toggle: (Direction) -> Void
-
-    private var isExpanded: Bool { expanded == direction }
 
     var body: some View {
         let current = model.current(direction)
+        let expanded = navigator.expanded == direction
         VStack(alignment: .leading, spacing: 0) {
-            HoverButton(action: { toggle(direction) }) {
-                HStack(spacing: 8) {
+            MenuRow(navigator: navigator, item: .section(direction), label: "\(direction.label): \(current?.displayName ?? "none")") { _ in
+                HStack(spacing: 10) {
                     Image(systemName: current.map(deviceSymbol) ?? (direction == .input ? "mic" : "speaker.wave.2"))
-                        .frame(width: 18)
                         .foregroundStyle(.secondary)
-                        .accessibilityHidden(true)
-                    VStack(alignment: .leading, spacing: 0) {
+                        .frame(width: 18)
+                    VStack(alignment: .leading, spacing: 1) {
                         Text(direction.label)
                             .font(.caption)
                             .foregroundStyle(.secondary)
                         Text(current?.displayName ?? "None")
                             .lineLimit(1)
-                            .truncationMode(.tail)
                             .help(current?.name ?? "")
                     }
                     Spacer(minLength: 4)
-                    if current?.isManualPick == true {
-                        PinnedBadge()
-                    }
                     Image(systemName: "chevron.right")
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                        .accessibilityHidden(true)
+                        .foregroundStyle(.tertiary)
+                        .rotationEffect(.degrees(expanded ? 90 : 0))
                 }
             }
-            .accessibilityLabel("\(direction.label): \(current?.displayName ?? "none")")
-            .accessibilityValue(isExpanded ? "expanded" : "collapsed")
-            .accessibilityHint("Shows all connected \(direction.lowercaseLabel) devices")
+            .accessibilityValue(expanded ? "expanded" : "collapsed")
+            .accessibilityHint("Shows connected \(direction.lowercaseLabel) devices in priority order")
 
-            if isExpanded {
-                DeviceList(model: model, direction: direction)
+            if expanded {
+                DeviceList(model: model, navigator: navigator, direction: direction)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
+        .clipped()
     }
 }
 
 private struct DeviceList: View {
     @ObservedObject var model: AppModel
+    @ObservedObject var navigator: MenuNavigator
     let direction: Direction
+    private let visibleRows = 8
 
     var body: some View {
         let rows = model.menuRows(direction)
         Group {
             if rows.isEmpty {
-                Text("No \(direction.lowercaseLabel) devices connected")
+                Text("No devices connected")
                     .font(.callout)
                     .foregroundStyle(.secondary)
-                    .padding(.horizontal, 40)
+                    .padding(.horizontal, 42)
                     .padding(.vertical, 4)
-            } else if rows.count > 8 {
-                ScrollView {
-                    content(rows)
-                }
-                .frame(height: 8 * 26)
+            } else if rows.count > visibleRows {
+                ScrollView { content(rows) }.frame(height: CGFloat(visibleRows) * 26)
             } else {
                 content(rows)
             }
@@ -145,59 +183,15 @@ private struct DeviceList: View {
     private func content(_ rows: [DeviceRow]) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             ForEach(rows) { row in
-                MenuDeviceRow(row: row) {
-                    model.engine.pick(row.uid, direction)
+                MenuRow(navigator: navigator, item: .device(direction, row.uid), enabled: row.isUsable, label: label(row)) { _ in
+                    MenuDeviceLine(row: row)
                 }
+                .accessibilityHint("Selects it until it disconnects or a higher-ranked device connects")
             }
         }
     }
-}
 
-private struct MenuDeviceRow: View {
-    let row: DeviceRow
-    let action: () -> Void
-
-    var body: some View {
-        HoverButton(action: action) {
-            HStack(spacing: 8) {
-                Text("\(row.rank)")
-                    .font(.callout.monospacedDigit())
-                    .foregroundStyle(.secondary)
-                    .frame(width: 18, alignment: .trailing)
-                Text(row.displayName)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .help(row.name)
-                    .foregroundStyle(row.isUsable ? .primary : .secondary)
-                Spacer(minLength: 4)
-                if !row.isUsable {
-                    Text("Not ready")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                if row.isAvoided {
-                    Text("Avoided")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                if row.isManualPick {
-                    PinnedBadge()
-                }
-                Image(systemName: "checkmark")
-                    .font(.callout.weight(.semibold))
-                    .foregroundStyle(Color.prioAccent)
-                    .opacity(row.isDefault ? 1 : 0)
-                    .frame(width: 14)
-                    .accessibilityHidden(true)
-            }
-            .padding(.leading, 12)
-        }
-        .disabled(!row.isUsable)
-        .accessibilityLabel(menuAccessibilityLabel)
-        .accessibilityHint("Selects this device and keeps it until it disconnects or a higher-ranked device connects")
-    }
-
-    private var menuAccessibilityLabel: String {
+    private func label(_ row: DeviceRow) -> String {
         var parts = [row.displayName, "rank \(row.rank)"]
         if row.isDefault { parts.append("in use") }
         if !row.isUsable { parts.append("not ready") }
@@ -207,50 +201,82 @@ private struct MenuDeviceRow: View {
     }
 }
 
-/// Marks the manual pick. Accent outline plus text, never color alone.
+private struct MenuDeviceLine: View, Equatable {
+    let row: DeviceRow
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text("\(row.rank)")
+                .font(.callout.monospacedDigit())
+                .foregroundStyle(.tertiary)
+                .frame(width: 18, alignment: .trailing)
+            Text(row.displayName)
+                .lineLimit(1)
+                .foregroundStyle(row.isUsable ? .primary : .secondary)
+                .help(row.name)
+            Spacer(minLength: 4)
+            if !row.isUsable { Tag("Not ready") }
+            if row.isAvoided { Tag("Avoided") }
+            if row.isManualPick { PinnedBadge() }
+            Image(systemName: "checkmark")
+                .font(.callout.weight(.semibold))
+                .foregroundStyle(Color.prioAccent)
+                .opacity(row.isDefault ? 1 : 0)
+                .frame(width: 14)
+                .accessibilityHidden(true)
+        }
+        .padding(.leading, 10)
+    }
+}
+
+private struct Tag: View {
+    let text: String
+    init(_ text: String) { self.text = text }
+
+    var body: some View {
+        Text(text).font(.caption).foregroundStyle(.secondary)
+    }
+}
+
+/// Marks the manual pick with text, not color alone.
 struct PinnedBadge: View {
     var body: some View {
-        HStack(spacing: 2) {
-            Image(systemName: "pin.fill")
-                .font(.caption2)
-                .foregroundStyle(Color.prioAccent)
-            Text("Pinned")
-                .font(.caption2.weight(.medium))
-                .foregroundStyle(.primary)
-        }
-        .padding(.horizontal, 5)
-        .padding(.vertical, 1)
-        .overlay(Capsule().strokeBorder(Color.prioAccent, lineWidth: 1))
-        .help("You picked this device. Prio keeps it until it disconnects or a higher-ranked device connects.")
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Pinned")
+        Text("Pinned")
+            .font(.caption2.weight(.medium))
+            .foregroundStyle(Color.prioAccent)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 1)
+            .background(Capsule().fill(Color.prioAccent.opacity(0.14)))
+            .help("You picked this device. Prio keeps it until it disconnects or a higher-ranked device connects.")
+            .accessibilityLabel("Pinned")
     }
 }
 
 private struct LastActionView: View {
     @ObservedObject var model: AppModel
+    @ObservedObject var navigator: MenuNavigator
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            if let a = model.lastAction {
+            if let action = model.lastAction {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(a.sentence)
+                        Text(action.sentence)
                             .font(.callout)
                             .fixedSize(horizontal: false, vertical: true)
-                        // Recomputed whenever the menu opens (no timers while idle, R9).
-                        Text(relative(a.date, now: Date()))
+                        Text(relative(action.date))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
                     Spacer(minLength: 4)
                     if model.canUndo {
-                        Button("Undo") { model.engine.undo() }
+                        Button("Undo") { navigator.activate(.undo) }
                             .controlSize(.small)
                             .accessibilityHint("Restores the previous device and pins it")
                     }
                 }
-                .accessibilityElement(children: .contain)
+                .id(action.id)
+                .transition(.opacity.combined(with: .offset(y: -4)))
             } else {
                 Text("No recent changes")
                     .font(.callout)
@@ -258,65 +284,36 @@ private struct LastActionView: View {
             }
             ForEach(Direction.allCases, id: \.self) { d in
                 if model.loopActive[d] == true {
-                    Label("Not correcting \(d.lowercaseLabel): something keeps changing it.", systemImage: "exclamationmark.triangle")
+                    Text("Not correcting \(d.lowercaseLabel): something keeps changing it.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 4)
+        .padding(.vertical, 2)
     }
 
-    private func relative(_ date: Date, now: Date) -> String {
-        if now.timeIntervalSince(date) < 60 { return "Just now" }
-        let f = RelativeDateTimeFormatter()
-        f.unitsStyle = .full
-        return f.localizedString(for: date, relativeTo: now)
+    /// Recomputed when the popover opens; no timers while idle (R9).
+    private func relative(_ date: Date) -> String {
+        if Date().timeIntervalSince(date) < 60 { return "Just now" }
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .full
+        return formatter.localizedString(for: date, relativeTo: Date())
     }
 }
 
-private struct MenuCommand: View {
+private struct CommandLabel: View {
     let title: String
     let shortcut: String
-    let action: () -> Void
 
     var body: some View {
-        HoverButton(action: action) {
-            HStack {
-                Text(title)
-                Spacer()
-                Text(shortcut)
-                    .foregroundStyle(.secondary)
-                    .accessibilityHidden(true)
-            }
+        HStack {
+            Text(title)
+            Spacer()
+            Text(shortcut)
+                .foregroundStyle(.tertiary)
+                .accessibilityHidden(true)
         }
-        .accessibilityLabel(title)
-    }
-}
-
-/// A full-width, menu-like row button with a hover highlight.
-struct HoverButton<Label: View>: View {
-    let action: () -> Void
-    @ViewBuilder let label: () -> Label
-    @ViewState private var hovering = false
-    @Environment(\.isEnabled) private var isEnabled
-    @Environment(\.colorSchemeContrast) private var contrast
-
-    var body: some View {
-        Button(action: action) {
-            label()
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
-                .background(
-                    RoundedRectangle(cornerRadius: 5)
-                        .fill(Color.primary.opacity(hovering && isEnabled ? (contrast == .increased ? 0.2 : 0.1) : 0))
-                )
-        }
-        .buttonStyle(.plain)
-        .padding(.horizontal, 6)
-        .onHover { hovering = $0 }
     }
 }

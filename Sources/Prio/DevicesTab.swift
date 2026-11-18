@@ -7,6 +7,11 @@ struct DevicesTab: View {
     @ObservedObject var model: AppModel
     @ViewState private var direction: Direction
     @ViewState private var selection: String?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private func animate(_ edit: () -> Void) {
+        withAnimation(Motion.standard(reduceMotion), edit)
+    }
 
     init(model: AppModel, direction: Direction = .output) {
         self.model = model
@@ -28,13 +33,6 @@ struct DevicesTab: View {
             .accessibilityLabel("Device list")
             .onChange(of: direction) { _ in selection = nil }
 
-            Text(direction == .input
-                ? "Prio uses the highest connected microphone that is set to be used automatically."
-                : "Prio uses the highest connected output that is set to be used automatically.")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-
             List(selection: $selection) {
                 ForEach(rows) { row in
                     DeviceSettingsRow(model: model, row: row)
@@ -42,11 +40,11 @@ struct DevicesTab: View {
                         .contextMenu { contextMenu(for: row) }
                 }
                 .onMove { source, destination in
-                    model.engine.move(direction, fromOffsets: source, toOffset: destination)
+                    animate { model.engine.move(direction, fromOffsets: source, toOffset: destination) }
                     NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
                 }
             }
-            .listStyle(.inset(alternatesRowBackgrounds: true))
+            .listStyle(.inset(alternatesRowBackgrounds: false))
             .overlay {
                 if rows.isEmpty {
                     Text("No devices yet")
@@ -55,7 +53,7 @@ struct DevicesTab: View {
             }
             .background(keyboardShortcuts)
 
-            Text("Drag to reorder, or select a device and press ⌥⌘↑ or ⌥⌘↓. Right-click for more options.")
+            Text("Drag to reorder, or press ⌥⌘↑ and ⌥⌘↓. Untick a device to use it only as a last resort.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -66,11 +64,11 @@ struct DevicesTab: View {
 
     @ViewBuilder
     private func contextMenu(for row: DeviceRow) -> some View {
-        Button("Move Up") { model.engine.moveUp(row.uid, direction) }
+        Button("Move Up") { animate { model.engine.moveUp(row.uid, direction) } }
             .disabled(row.rank == 1)
-        Button("Move Down") { model.engine.moveDown(row.uid, direction) }
+        Button("Move Down") { animate { model.engine.moveDown(row.uid, direction) } }
             .disabled(row.rank == rows.count)
-        Button("Move to Top") { model.engine.moveToTop(row.uid, direction) }
+        Button("Move to Top") { animate { model.engine.moveToTop(row.uid, direction) } }
             .disabled(row.rank == 1)
         if !row.isConnected {
             Divider()
@@ -85,11 +83,11 @@ struct DevicesTab: View {
     private var keyboardShortcuts: some View {
         ZStack {
             Button("Move Up") {
-                if let uid = selection { model.engine.moveUp(uid, direction) }
+                if let uid = selection { animate { model.engine.moveUp(uid, direction) } }
             }
             .keyboardShortcut(.upArrow, modifiers: [.command, .option])
             Button("Move Down") {
-                if let uid = selection { model.engine.moveDown(uid, direction) }
+                if let uid = selection { animate { model.engine.moveDown(uid, direction) } }
             }
             .keyboardShortcut(.downArrow, modifiers: [.command, .option])
         }
@@ -102,6 +100,11 @@ struct DevicesTab: View {
 private struct DeviceSettingsRow: View {
     @ObservedObject var model: AppModel
     let row: DeviceRow
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private func animate(_ edit: () -> Void) {
+        withAnimation(Motion.standard(reduceMotion), edit)
+    }
 
     var body: some View {
         HStack(spacing: 10) {
@@ -128,13 +131,14 @@ private struct DeviceSettingsRow: View {
                 }
                 Spacer(minLength: 8)
                 StatusLabel(status: row.status)
+                    .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: row.status)
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(row.accessibilitySummary)
             .accessibilityAddTraits(.isButton)
-            .accessibilityAction(named: "Move Up") { model.engine.moveUp(row.uid, row.direction) }
-            .accessibilityAction(named: "Move Down") { model.engine.moveDown(row.uid, row.direction) }
-            .accessibilityAction(named: "Move to Top") { model.engine.moveToTop(row.uid, row.direction) }
+            .accessibilityAction(named: "Move Up") { animate { model.engine.moveUp(row.uid, row.direction) } }
+            .accessibilityAction(named: "Move Down") { animate { model.engine.moveDown(row.uid, row.direction) } }
+            .accessibilityAction(named: "Move to Top") { animate { model.engine.moveToTop(row.uid, row.direction) } }
 
             Toggle("Use automatically", isOn: Binding(
                 get: { !row.isAvoided },
@@ -167,6 +171,8 @@ private struct StatusLabel: View {
             }
         }
         .font(.callout)
+        .id(status)
+        .transition(.opacity)
         .frame(width: 118, alignment: .leading)
         .accessibilityElement(children: .combine)
     }

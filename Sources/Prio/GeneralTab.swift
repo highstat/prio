@@ -35,7 +35,6 @@ struct GeneralTab: View {
                 Toggle("Show notifications", isOn: model.binding(\.notificationsEnabled))
                 Toggle("Notify on every switch", isOn: model.binding(\.notifyOnEverySwitch))
                     .disabled(!model.settings.notificationsEnabled)
-                Caption("Prio always tells you when it reverts a change, uses an avoided device, stops correcting, or fails to switch.")
             }
 
             Section("Changes made outside Prio") {
@@ -59,7 +58,7 @@ struct GeneralTab: View {
 
             Section("Diagnostics") {
                 HStack {
-                    Caption("A plain-text report for bug reports. You see it before anything is copied. Nothing is sent anywhere.")
+                    Caption("Preview a plain-text report, then copy it. Nothing is sent anywhere.")
                     Spacer()
                     Button("Copy Diagnostics…") { showingDiagnostics = true }
                 }
